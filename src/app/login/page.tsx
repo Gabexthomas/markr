@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function LoginPage() {
+function LoginForm() {
+  const searchParams = useSearchParams();
+  const callbackError = searchParams.get("error");
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">(
+    () => (callbackError ? "error" : "idle")
+  );
+  const [errorMessage, setErrorMessage] = useState(() => callbackError ?? "");
 
   async function sendMagicLink() {
     if (!email) {
@@ -103,5 +108,13 @@ export default function LoginPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }
