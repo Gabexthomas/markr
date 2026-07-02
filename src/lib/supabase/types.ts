@@ -33,6 +33,7 @@ export interface Database {
           plan?: Plan;
           created_at?: string;
         };
+        Relationships: [];
       };
       shows: {
         Row: {
@@ -56,6 +57,7 @@ export interface Database {
           fps?: Fps;
           created_at?: string;
         };
+        Relationships: [];
       };
       buttons: {
         Row: {
@@ -88,6 +90,7 @@ export interface Database {
           type?: ButtonType;
           created_at?: string;
         };
+        Relationships: [];
       };
       sessions: {
         Row: {
@@ -117,6 +120,7 @@ export interface Database {
           offset_seconds?: number;
           created_at?: string;
         };
+        Relationships: [];
       };
       markers: {
         Row: {
@@ -152,7 +156,10 @@ export interface Database {
           deleted?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
   };
 }
