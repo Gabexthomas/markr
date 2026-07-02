@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
@@ -28,6 +29,14 @@ export default async function ShowEditorPage({
   return (
     <main className="flex min-h-screen flex-col">
       <PageHeader title={show.name} backHref="/shows" />
+      <div className="px-4 pt-4">
+        <Link
+          href={`/shows/${show.id}/session`}
+          className="flex items-center justify-center rounded-lg bg-red-500 px-4 py-4 text-base font-medium text-white transition-colors hover:bg-red-600"
+        >
+          ▶ Start session
+        </Link>
+      </div>
       <ButtonGridEditor showId={show.id} initialButtons={buttons ?? []} />
     </main>
   );

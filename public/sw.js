@@ -2,7 +2,7 @@
 // Caches the app shell so the app can load with no network connection.
 // Marker/session data itself lives in localStorage + Supabase sync, not here.
 
-const CACHE_NAME = "markr-shell-v1";
+const CACHE_NAME = "markr-shell-v2";
 const APP_SHELL = ["/", "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -27,16 +27,19 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Navigation requests: try network first (fresh app), fall back to cached shell offline.
+  // Navigation requests: try network first (fresh app), fall back to that
+  // same page's own cached copy offline — e.g. a previously-visited live
+  // session screen falls back to itself, not to a generic shell that would
+  // lose the route (and the in-progress session it should be showing).
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/", copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;
         })
-        .catch(() => caches.match("/"))
+        .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
     );
     return;
   }
