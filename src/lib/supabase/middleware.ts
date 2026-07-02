@@ -26,11 +26,12 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Refreshes the auth token if it's expired. Required for server-rendered
-  // pages to see a valid session.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Do not run code between createServerClient and getClaims() — a stray
+  // await here can make token-refresh bugs very hard to track down.
+  // getClaims() validates the JWT locally against the project's published
+  // public keys, unlike getSession(), which isn't guaranteed to revalidate.
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims;
 
   const isPublicPath = PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path));
 
