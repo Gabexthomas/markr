@@ -1,11 +1,27 @@
 "use client";
 
 import { useState } from "react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { ButtonColor, ButtonType } from "@/lib/supabase/types";
 import {
   createButtonAction,
   deleteButtonAction,
-  moveButtonAction,
+  reorderButtonsAction,
   updateButtonAction,
 } from "./actions";
 
@@ -119,6 +135,84 @@ function ButtonForm({
   );
 }
 
+function SortableButtonRow({
+  button,
+  editing,
+  pending,
+  busy,
+  onEdit,
+  onDelete,
+  onUpdate,
+  onCancelEdit,
+}: {
+  button: ButtonRow;
+  editing: boolean;
+  pending: boolean;
+  busy: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onUpdate: (formData: FormData) => void;
+  onCancelEdit: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: button.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  if (editing) {
+    return (
+      <li ref={setNodeRef} style={style}>
+        <ButtonForm
+          initial={button}
+          pending={pending}
+          onSubmit={onUpdate}
+          onCancel={onCancelEdit}
+        />
+      </li>
+    );
+  }
+
+  return (
+    <li ref={setNodeRef} style={style}>
+      <div className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-3">
+        <button
+          {...attributes}
+          {...listeners}
+          aria-label="Drag to reorder"
+          className="shrink-0 touch-none px-1 py-2 text-neutral-500 hover:text-neutral-300"
+        >
+          ⠿
+        </button>
+        <span className={`h-6 w-6 shrink-0 rounded-full ${COLOR_CLASS[button.color]}`} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{button.label}</p>
+          <p className="text-xs capitalize text-neutral-500">{button.type}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={onEdit}
+            className="rounded-lg p-2 text-neutral-400 hover:text-foreground"
+          >
+            Edit
+          </button>
+          <button
+            disabled={busy}
+            onClick={onDelete}
+            className="rounded-lg p-2 text-red-400 hover:text-red-300 disabled:opacity-30"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 export function ButtonGridEditor({
   showId,
   initialButtons,
@@ -126,12 +220,28 @@ export function ButtonGridEditor({
   showId: string;
   initialButtons: ButtonRow[];
 }) {
-  const buttons = initialButtons;
+  const [buttons, setButtons] = useState(initialButtons);
+  // Re-sync local order from the server-confirmed prop whenever it changes
+  // for a reason other than our own optimistic reorder below (e.g. after
+  // add/edit/delete revalidate). Doing this during render — not in an
+  // effect — is React's documented pattern for this, and avoids the
+  // drag-drop flicker an effect-based sync would cause.
+  const [syncedFrom, setSyncedFrom] = useState(initialButtons);
+  if (initialButtons !== syncedFrom) {
+    setSyncedFrom(initialButtons);
+    setButtons(initialButtons);
+  }
+
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const hasSegmentButton = buttons.some((b) => b.type === "segment");
 
@@ -174,15 +284,24 @@ export function ButtonGridEditor({
     }
   }
 
-  async function handleMove(buttonId: string, direction: "up" | "down") {
-    setBusyId(buttonId);
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = buttons.findIndex((b) => b.id === active.id);
+    const newIndex = buttons.findIndex((b) => b.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(buttons, oldIndex, newIndex);
+    setButtons(reordered);
     setError("");
     try {
-      await moveButtonAction(showId, buttonId, direction);
+      await reorderButtonsAction(
+        showId,
+        reordered.map((b) => b.id)
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reorder button.");
-    } finally {
-      setBusyId(null);
+      setError(err instanceof Error ? err.message : "Failed to save new order.");
     }
   }
 
@@ -197,62 +316,31 @@ export function ButtonGridEditor({
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
-      <ul className="flex flex-col gap-2">
-        {buttons.map((button, index) => (
-          <li key={button.id}>
-            {editingId === button.id ? (
-              <ButtonForm
-                initial={button}
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <SortableContext
+          items={buttons.map((b) => b.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <ul className="flex flex-col gap-2">
+            {buttons.map((button) => (
+              <SortableButtonRow
+                key={button.id}
+                button={button}
+                editing={editingId === button.id}
                 pending={pending}
-                onSubmit={(formData) => handleUpdate(button.id, formData)}
-                onCancel={() => setEditingId(null)}
+                busy={busyId === button.id}
+                onEdit={() => {
+                  setIsAdding(false);
+                  setEditingId(button.id);
+                }}
+                onDelete={() => handleDelete(button.id, button.label)}
+                onUpdate={(formData) => handleUpdate(button.id, formData)}
+                onCancelEdit={() => setEditingId(null)}
               />
-            ) : (
-              <div className="flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-3">
-                <span className={`h-6 w-6 shrink-0 rounded-full ${COLOR_CLASS[button.color]}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{button.label}</p>
-                  <p className="text-xs capitalize text-neutral-500">{button.type}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    aria-label="Move up"
-                    disabled={index === 0 || busyId === button.id}
-                    onClick={() => handleMove(button.id, "up")}
-                    className="rounded-lg p-2 text-neutral-400 hover:text-foreground disabled:opacity-30"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    aria-label="Move down"
-                    disabled={index === buttons.length - 1 || busyId === button.id}
-                    onClick={() => handleMove(button.id, "down")}
-                    className="rounded-lg p-2 text-neutral-400 hover:text-foreground disabled:opacity-30"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsAdding(false);
-                      setEditingId(button.id);
-                    }}
-                    className="rounded-lg p-2 text-neutral-400 hover:text-foreground"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    disabled={busyId === button.id}
-                    onClick={() => handleDelete(button.id, button.label)}
-                    className="rounded-lg p-2 text-red-400 hover:text-red-300 disabled:opacity-30"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
 
       {isAdding ? (
         <ButtonForm

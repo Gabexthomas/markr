@@ -14,6 +14,7 @@ import {
   nudgeMarkerAction,
   updateMarkerNoteAction,
   updateSessionOffsetAction,
+  updateSessionTitleAction,
 } from "./actions";
 
 type Marker = {
@@ -61,6 +62,9 @@ export function SessionReview({
   const [colorLabels, setColorLabels] = useState(false);
   const [exportingKind, setExportingKind] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState(session.title);
+  const [savingTitle, setSavingTitle] = useState(false);
 
   const startMs = new Date(session.started_at).getTime();
 
@@ -68,6 +72,28 @@ export function SessionReview({
     return (
       new Date(marker.tapped_at).getTime() - startMs + session.offset_seconds * 1000
     );
+  }
+
+  function openTitleEdit() {
+    setTitleInput(session.title);
+    setEditingTitle(true);
+  }
+
+  async function handleSaveTitle() {
+    if (!titleInput.trim()) {
+      setError("Title can't be empty.");
+      return;
+    }
+    setSavingTitle(true);
+    setError("");
+    try {
+      await updateSessionTitleAction(show.id, session.id, titleInput);
+      setEditingTitle(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save title.");
+    } finally {
+      setSavingTitle(false);
+    }
   }
 
   async function handleSaveOffset() {
@@ -144,7 +170,34 @@ export function SessionReview({
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pb-10">
       <div>
-        <h2 className="text-lg font-medium">{session.title}</h2>
+        {editingTitle ? (
+          <div className="flex gap-2">
+            <input
+              value={titleInput}
+              onChange={(e) => setTitleInput(e.target.value)}
+              autoFocus
+              className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-lg text-foreground focus:border-neutral-500 focus:outline-none"
+            />
+            <button
+              onClick={handleSaveTitle}
+              disabled={savingTitle}
+              className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-700 disabled:opacity-50"
+            >
+              {savingTitle ? "Saving..." : "Save"}
+            </button>
+            <button
+              onClick={() => setEditingTitle(false)}
+              className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button onClick={openTitleEdit} className="flex items-center gap-2 text-left">
+            <h2 className="text-lg font-medium">{session.title}</h2>
+            <span className="text-sm text-neutral-500">✎</span>
+          </button>
+        )}
         <p className="text-sm text-neutral-500">
           {markers.length} marker{markers.length === 1 ? "" : "s"} · {show.fps} fps
         </p>

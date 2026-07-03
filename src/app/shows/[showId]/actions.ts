@@ -71,32 +71,18 @@ export async function deleteButtonAction(showId: string, buttonId: string) {
   revalidatePath(`/shows/${showId}`);
 }
 
-export async function moveButtonAction(
-  showId: string,
-  buttonId: string,
-  direction: "up" | "down"
-) {
+// Persists a full new ordering in one go — drag-and-drop can move a button
+// several positions in a single gesture, unlike the old up/down swap.
+export async function reorderButtonsAction(showId: string, orderedButtonIds: string[]) {
   const supabase = await createClient();
-  const { data: buttons, error: fetchError } = await supabase
-    .from("buttons")
-    .select("id, sort_order")
-    .eq("show_id", showId)
-    .order("sort_order", { ascending: true });
 
-  if (fetchError || !buttons) throw new Error(fetchError?.message ?? "Failed to load buttons.");
+  const results = await Promise.all(
+    orderedButtonIds.map((id, index) =>
+      supabase.from("buttons").update({ sort_order: index }).eq("id", id)
+    )
+  );
 
-  const index = buttons.findIndex((b) => b.id === buttonId);
-  const swapIndex = direction === "up" ? index - 1 : index + 1;
-  if (index === -1 || swapIndex < 0 || swapIndex >= buttons.length) return;
-
-  const a = buttons[index];
-  const b = buttons[swapIndex];
-
-  const [{ error: err1 }, { error: err2 }] = await Promise.all([
-    supabase.from("buttons").update({ sort_order: b.sort_order }).eq("id", a.id),
-    supabase.from("buttons").update({ sort_order: a.sort_order }).eq("id", b.id),
-  ]);
-
-  if (err1 || err2) throw new Error(err1?.message ?? err2?.message);
+  const firstError = results.find((r) => r.error)?.error;
+  if (firstError) throw new Error(firstError.message);
   revalidatePath(`/shows/${showId}`);
 }

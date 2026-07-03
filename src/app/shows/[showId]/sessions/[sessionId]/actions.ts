@@ -65,3 +65,17 @@ export async function updateSessionOffsetAction(
   if (error) throw new Error(error.message);
   revalidatePath(path(showId, sessionId));
 }
+
+export async function updateSessionTitleAction(
+  showId: string,
+  sessionId: string,
+  title: string
+) {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("Title can't be empty.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("sessions").update({ title: trimmed }).eq("id", sessionId);
+  if (error) throw new Error(error.message);
+  revalidatePath(path(showId, sessionId));
+  revalidatePath(`/shows/${showId}/sessions`);
+}

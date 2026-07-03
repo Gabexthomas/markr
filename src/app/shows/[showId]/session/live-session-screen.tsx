@@ -39,6 +39,14 @@ function vibrate() {
   }
 }
 
+function defaultSessionTitle() {
+  return new Date().toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 const subscribeNever = () => () => {};
 
 // The React-blessed way to know "we're past hydration" without an effect —
@@ -93,6 +101,7 @@ export function LiveSessionScreen({ show, buttons }: { show: Show; buttons: Show
   const [logOpen, setLogOpen] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
+  const [titleInput, setTitleInput] = useState("");
 
   // Cosmetic timer only — recomputed from started_at on every tick, never
   // accumulated. Ticks only while the tab is actually visible, and
@@ -131,11 +140,7 @@ export function LiveSessionScreen({ show, buttons }: { show: Show; buttons: Show
     const session: LocalSession = {
       id,
       show_id: show.id,
-      title: new Date().toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }),
+      title: titleInput.trim() || defaultSessionTitle(),
       started_at: new Date().toISOString(),
       ended_at: null,
       offset_seconds: 0,
@@ -222,7 +227,8 @@ export function LiveSessionScreen({ show, buttons }: { show: Show; buttons: Show
           {state?.session.ended_at && (
             <div className="flex flex-col items-center gap-3">
               <p className="text-sm text-neutral-400">
-                Last session ended with {state.markers.filter((m) => !m.deleted).length} markers.
+                &quot;{state.session.title}&quot; ended with{" "}
+                {state.markers.filter((m) => !m.deleted).length} markers.
               </p>
               <Link
                 href={`/shows/${show.id}/sessions/${state.session.id}`}
@@ -232,6 +238,13 @@ export function LiveSessionScreen({ show, buttons }: { show: Show; buttons: Show
               </Link>
             </div>
           )}
+          <input
+            value={titleInput}
+            onChange={(e) => setTitleInput(e.target.value)}
+            placeholder={defaultSessionTitle()}
+            aria-label="Session title"
+            className="w-full max-w-xs rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 text-center text-base text-foreground placeholder:text-neutral-500 focus:border-neutral-500 focus:outline-none"
+          />
           <button
             onClick={handleStart}
             className="flex h-40 w-40 items-center justify-center rounded-full bg-red-500 text-2xl font-semibold text-white shadow-lg transition-transform active:scale-95"
@@ -249,7 +262,10 @@ export function LiveSessionScreen({ show, buttons }: { show: Show; buttons: Show
   return (
     <main className="flex min-h-screen flex-col pb-6">
       <header className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-        <span className="truncate text-sm text-neutral-400">{show.name}</span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-foreground">{state.session.title}</p>
+          <p className="truncate text-xs text-neutral-500">{show.name}</p>
+        </div>
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
           <span className="font-mono text-lg tabular-nums">{formatElapsed(elapsedMs)}</span>
