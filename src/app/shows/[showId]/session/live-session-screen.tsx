@@ -153,6 +153,7 @@ export function LiveSessionScreen({ show, buttons }: { show: Show; buttons: Show
       button_id: button.id,
       label: button.label,
       color: button.color,
+      type: button.type,
       tapped_at: new Date().toISOString(),
       note: null,
       deleted: false,
@@ -219,9 +220,17 @@ export function LiveSessionScreen({ show, buttons }: { show: Show; buttons: Show
         </header>
         <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
           {state?.session.ended_at && (
-            <p className="text-sm text-neutral-400">
-              Last session ended with {state.markers.filter((m) => !m.deleted).length} markers.
-            </p>
+            <div className="flex flex-col items-center gap-3">
+              <p className="text-sm text-neutral-400">
+                Last session ended with {state.markers.filter((m) => !m.deleted).length} markers.
+              </p>
+              <Link
+                href={`/shows/${show.id}/sessions/${state.session.id}`}
+                className="rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-300 hover:border-neutral-500"
+              >
+                Review session
+              </Link>
+            </div>
           )}
           <button
             onClick={handleStart}

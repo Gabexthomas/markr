@@ -129,6 +129,7 @@ export interface Database {
           button_id: string | null;
           label: string;
           color: ButtonColor;
+          type: ButtonType;
           tapped_at: string;
           note: string | null;
           deleted: boolean;
@@ -140,6 +141,7 @@ export interface Database {
           button_id?: string | null;
           label: string;
           color: ButtonColor;
+          type?: ButtonType;
           tapped_at: string;
           note?: string | null;
           deleted?: boolean;
@@ -151,6 +153,7 @@ export interface Database {
           button_id?: string | null;
           label?: string;
           color?: ButtonColor;
+          type?: ButtonType;
           tapped_at?: string;
           note?: string | null;
           deleted?: boolean;

@@ -46,6 +46,7 @@ export async function syncSession(sessionId: string): Promise<LocalSessionState 
           button_id: m.button_id,
           label: m.label,
           color: m.color,
+          type: m.type,
           tapped_at: m.tapped_at,
           note: m.note,
           deleted: m.deleted,

@@ -1,4 +1,4 @@
-import type { ButtonColor } from "@/lib/supabase/types";
+import type { ButtonColor, ButtonType } from "@/lib/supabase/types";
 
 export interface LocalMarker {
   id: string;
@@ -6,6 +6,7 @@ export interface LocalMarker {
   button_id: string | null;
   label: string;
   color: ButtonColor;
+  type: ButtonType;
   tapped_at: string;
   note: string | null;
   deleted: boolean;

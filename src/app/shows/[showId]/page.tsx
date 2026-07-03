@@ -29,12 +29,18 @@ export default async function ShowEditorPage({
   return (
     <main className="flex min-h-screen flex-col">
       <PageHeader title={show.name} backHref="/shows" />
-      <div className="px-4 pt-4">
+      <div className="flex flex-col gap-2 px-4 pt-4">
         <Link
           href={`/shows/${show.id}/session`}
           className="flex items-center justify-center rounded-lg bg-red-500 px-4 py-4 text-base font-medium text-white transition-colors hover:bg-red-600"
         >
           ▶ Start session
+        </Link>
+        <Link
+          href={`/shows/${show.id}/sessions`}
+          className="flex items-center justify-center rounded-lg border border-neutral-700 px-4 py-3 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+        >
+          Session history
         </Link>
       </div>
       <ButtonGridEditor showId={show.id} initialButtons={buttons ?? []} />
