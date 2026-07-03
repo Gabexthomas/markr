@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
+import { SessionHistoryList } from "./session-history-list";
 
 export default async function SessionHistoryPage({
   params,
@@ -35,21 +35,7 @@ export default async function SessionHistoryPage({
             No sessions yet — start one from the show page.
           </p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {sessions.map((session) => (
-              <li key={session.id}>
-                <Link
-                  href={`/shows/${show.id}/sessions/${session.id}`}
-                  className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-4 transition-colors hover:border-neutral-600"
-                >
-                  <span className="text-base font-medium">{session.title}</span>
-                  <span className="text-sm text-neutral-500">
-                    {session.ended_at ? "Ended" : "In progress"}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <SessionHistoryList showId={show.id} sessions={sessions} />
         )}
       </div>
     </main>
