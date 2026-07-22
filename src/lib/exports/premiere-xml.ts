@@ -4,9 +4,10 @@ import type { ExportMarker } from "./types";
 
 // FCP7 xmeml v4, verified against a real Premiere-exported sample project
 // (sequence markers use <comment>/<name>/<in>/<out>, point markers use
-// out=-1) and a real Premiere-round-trippable fixture with a completely
-// empty <media></media> block — confirming a marker-only sequence with no
-// clips imports cleanly, which is all this export needs to do.
+// out=-1) and a real Premiere-round-trippable fixture with a clip-less
+// <media><video><format> declaring the sequence's frame size — confirming a
+// marker-only sequence with no clips imports cleanly at the right
+// resolution, which is all this export needs to do.
 
 const COLOR_LABEL: Record<ExportMarker["color"], string> = {
   red: "RED",
@@ -74,6 +75,18 @@ export function generatePremiereXml({
 ${rateXml("\t\t")}
 \t\t<name>${escapeXml(sequenceName)}</name>
 \t\t<media>
+\t\t\t<video>
+\t\t\t\t<format>
+\t\t\t\t\t<samplecharacteristics>
+\t\t\t\t\t\t<width>1920</width>
+\t\t\t\t\t\t<height>1080</height>
+\t\t\t\t\t\t<pixelaspectratio>square</pixelaspectratio>
+\t\t\t\t\t\t<fielddominance>none</fielddominance>
+\t\t\t\t\t\t<anamorphic>FALSE</anamorphic>
+${rateXml("\t\t\t\t\t\t")}
+\t\t\t\t\t</samplecharacteristics>
+\t\t\t\t</format>
+\t\t\t</video>
 \t\t</media>
 \t\t<timecode>
 ${rateXml("\t\t\t")}
