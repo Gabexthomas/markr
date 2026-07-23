@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ButtonColor, ButtonType, Fps } from "@/lib/supabase/types";
 import { formatElapsed } from "@/lib/format-timecode";
 import { computeExportMarkers } from "@/lib/exports/types";
 import { generatePremiereXml } from "@/lib/exports/premiere-xml";
 import { generateCsv } from "@/lib/exports/csv";
-import { generateYoutubeChapters } from "@/lib/exports/youtube-chapters";
+import { generateSectionSheet } from "@/lib/exports/section-sheet";
+import { generateTimecodesMarkdown } from "@/lib/exports/timecodes";
 import { generateClipSheet } from "@/lib/exports/clip-sheet";
 import { downloadOrShare, sanitizeFilename } from "@/lib/exports/download";
 import {
@@ -46,6 +48,106 @@ const COLOR_CLASS: Record<ButtonColor, string> = {
   gray: "bg-gray-500",
 };
 
+// Memoized, with only stable (useCallback'd, see below) function props, so
+// editing/nudging/deleting one row — or a fresh router.refresh() bringing in
+// the same marker data — doesn't re-render every other row in what can be a
+// 25+ item list for a long episode.
+function MarkerRowImpl({
+  marker,
+  startMs,
+  offsetSeconds,
+  isEditing,
+  isBusy,
+  onToggleEdit,
+  onNudge,
+  onSaveNote,
+  onDelete,
+}: {
+  marker: Marker;
+  startMs: number;
+  offsetSeconds: number;
+  isEditing: boolean;
+  isBusy: boolean;
+  onToggleEdit: (markerId: string) => void;
+  onNudge: (markerId: string, delta: number) => void;
+  onSaveNote: (markerId: string, note: string) => void;
+  onDelete: (markerId: string, label: string) => void;
+}) {
+  const elapsedMs = new Date(marker.tapped_at).getTime() - startMs + offsetSeconds * 1000;
+  return (
+    <li className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-3">
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-sm text-neutral-400">
+          {formatElapsed(elapsedMs)}
+        </span>
+        <span
+          className={`rounded-full px-2.5 py-1 text-xs font-medium text-white ${COLOR_CLASS[marker.color]}`}
+        >
+          {marker.label}
+        </span>
+        {marker.note && !isEditing && (
+          <span className="truncate text-sm text-neutral-400">{marker.note}</span>
+        )}
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          disabled={isBusy}
+          onClick={() => onNudge(marker.id, -1)}
+          className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 disabled:opacity-30"
+        >
+          −1s
+        </button>
+        <button
+          disabled={isBusy}
+          onClick={() => onNudge(marker.id, 1)}
+          className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 disabled:opacity-30"
+        >
+          +1s
+        </button>
+        <button
+          onClick={() => onToggleEdit(marker.id)}
+          className="rounded-lg px-3 py-1.5 text-sm text-neutral-300 hover:text-foreground"
+        >
+          {isEditing ? "Cancel" : "Edit note"}
+        </button>
+        <button
+          disabled={isBusy}
+          onClick={() => onDelete(marker.id, marker.label)}
+          className="rounded-lg px-3 py-1.5 text-sm text-red-400 hover:text-red-300 disabled:opacity-30"
+        >
+          Delete
+        </button>
+      </div>
+
+      {isEditing && (
+        <div className="mt-2 flex flex-col gap-2">
+          <textarea
+            defaultValue={marker.note ?? ""}
+            rows={2}
+            id={`note-${marker.id}`}
+            className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-foreground focus:border-neutral-500 focus:outline-none"
+          />
+          <button
+            disabled={isBusy}
+            onClick={() => {
+              const el = document.getElementById(
+                `note-${marker.id}`
+              ) as HTMLTextAreaElement | null;
+              onSaveNote(marker.id, el?.value ?? "");
+            }}
+            className="self-start rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Save note
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
+const MarkerRow = memo(MarkerRowImpl);
+
 export function SessionReview({
   show,
   session,
@@ -66,13 +168,24 @@ export function SessionReview({
   const [titleInput, setTitleInput] = useState(session.title);
   const [savingTitle, setSavingTitle] = useState(false);
 
-  const startMs = new Date(session.started_at).getTime();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // The live session screen navigates here with ?ended=1 right after
+  // writing ended_at, instead of showing a "session ended" message on the
+  // now-stale live screen. Show it briefly here, then strip the param so a
+  // refresh or the back button doesn't re-trigger it.
+  const [showEndedToast, setShowEndedToast] = useState(() => searchParams.get("ended") === "1");
 
-  function elapsedMsFor(marker: Marker) {
-    return (
-      new Date(marker.tapped_at).getTime() - startMs + session.offset_seconds * 1000
-    );
-  }
+  useEffect(() => {
+    if (!showEndedToast) return;
+    router.replace(pathname, { scroll: false });
+    const timeout = setTimeout(() => setShowEndedToast(false), 4000);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showEndedToast]);
+
+  const startMs = new Date(session.started_at).getTime();
 
   function openTitleEdit() {
     setTitleInput(session.title);
@@ -113,44 +226,57 @@ export function SessionReview({
     }
   }
 
-  async function handleNudge(markerId: string, delta: number) {
-    setBusyId(markerId);
-    setError("");
-    try {
-      await nudgeMarkerAction(show.id, session.id, markerId, delta);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to nudge marker.");
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const handleToggleEdit = useCallback((markerId: string) => {
+    setEditingId((cur) => (cur === markerId ? null : markerId));
+  }, []);
 
-  async function handleSaveNote(markerId: string, note: string) {
-    setBusyId(markerId);
-    setError("");
-    try {
-      await updateMarkerNoteAction(show.id, session.id, markerId, note);
-      setEditingId(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save note.");
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const handleNudge = useCallback(
+    async (markerId: string, delta: number) => {
+      setBusyId(markerId);
+      setError("");
+      try {
+        await nudgeMarkerAction(show.id, session.id, markerId, delta);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to nudge marker.");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [show.id, session.id]
+  );
 
-  async function handleDelete(markerId: string, label: string) {
-    if (!window.confirm(`Delete "${label}"? This can't be undone.`)) return;
-    setBusyId(markerId);
-    setError("");
-    try {
-      await deleteMarkerAction(show.id, session.id, markerId);
-      setEditingId(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete marker.");
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const handleSaveNote = useCallback(
+    async (markerId: string, note: string) => {
+      setBusyId(markerId);
+      setError("");
+      try {
+        await updateMarkerNoteAction(show.id, session.id, markerId, note);
+        setEditingId(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save note.");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [show.id, session.id]
+  );
+
+  const handleDelete = useCallback(
+    async (markerId: string, label: string) => {
+      if (!window.confirm(`Delete "${label}"? This can't be undone.`)) return;
+      setBusyId(markerId);
+      setError("");
+      try {
+        await deleteMarkerAction(show.id, session.id, markerId);
+        setEditingId(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to delete marker.");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [show.id, session.id]
+  );
 
   async function runExport(kind: string, fn: () => Promise<void> | void) {
     setExportingKind(kind);
@@ -166,9 +292,16 @@ export function SessionReview({
 
   const baseFilename = sanitizeFilename(`${show.name}-${session.title}`);
   const exportMarkers = computeExportMarkers(markers, session.started_at, session.offset_seconds);
+  const lastMarkerTappedAt = markers.length > 0 ? markers[markers.length - 1].tapped_at : null;
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pb-10">
+      {showEndedToast && (
+        <p className="rounded-lg border border-green-800 bg-green-950/40 px-3 py-2 text-sm text-green-300">
+          ✓ Session ended — {markers.length} marker{markers.length === 1 ? "" : "s"} saved.
+        </p>
+      )}
+
       <div>
         {editingTitle ? (
           <div className="flex gap-2">
@@ -232,83 +365,20 @@ export function SessionReview({
         {markers.length === 0 && (
           <li className="py-4 text-center text-sm text-neutral-500">No markers in this session.</li>
         )}
-        {markers.map((marker) => {
-          const isEditing = editingId === marker.id;
-          const isBusy = busyId === marker.id;
-          return (
-            <li
-              key={marker.id}
-              className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-3"
-            >
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-sm text-neutral-400">
-                  {formatElapsed(elapsedMsFor(marker))}
-                </span>
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-medium text-white ${COLOR_CLASS[marker.color]}`}
-                >
-                  {marker.label}
-                </span>
-                {marker.note && !isEditing && (
-                  <span className="truncate text-sm text-neutral-400">{marker.note}</span>
-                )}
-              </div>
-
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button
-                  disabled={isBusy}
-                  onClick={() => handleNudge(marker.id, -1)}
-                  className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 disabled:opacity-30"
-                >
-                  −1s
-                </button>
-                <button
-                  disabled={isBusy}
-                  onClick={() => handleNudge(marker.id, 1)}
-                  className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 disabled:opacity-30"
-                >
-                  +1s
-                </button>
-                <button
-                  onClick={() => setEditingId(isEditing ? null : marker.id)}
-                  className="rounded-lg px-3 py-1.5 text-sm text-neutral-300 hover:text-foreground"
-                >
-                  {isEditing ? "Cancel" : "Edit note"}
-                </button>
-                <button
-                  disabled={isBusy}
-                  onClick={() => handleDelete(marker.id, marker.label)}
-                  className="rounded-lg px-3 py-1.5 text-sm text-red-400 hover:text-red-300 disabled:opacity-30"
-                >
-                  Delete
-                </button>
-              </div>
-
-              {isEditing && (
-                <div className="mt-2 flex flex-col gap-2">
-                  <textarea
-                    defaultValue={marker.note ?? ""}
-                    rows={2}
-                    id={`note-${marker.id}`}
-                    className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-foreground focus:border-neutral-500 focus:outline-none"
-                  />
-                  <button
-                    disabled={isBusy}
-                    onClick={() => {
-                      const el = document.getElementById(
-                        `note-${marker.id}`
-                      ) as HTMLTextAreaElement | null;
-                      handleSaveNote(marker.id, el?.value ?? "");
-                    }}
-                    className="self-start rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-700 disabled:opacity-50"
-                  >
-                    Save note
-                  </button>
-                </div>
-              )}
-            </li>
-          );
-        })}
+        {markers.map((marker) => (
+          <MarkerRow
+            key={marker.id}
+            marker={marker}
+            startMs={startMs}
+            offsetSeconds={session.offset_seconds}
+            isEditing={editingId === marker.id}
+            isBusy={busyId === marker.id}
+            onToggleEdit={handleToggleEdit}
+            onNudge={handleNudge}
+            onSaveNote={handleSaveNote}
+            onDelete={handleDelete}
+          />
+        ))}
       </ul>
 
       <div className="flex flex-col gap-3 rounded-lg border border-neutral-800 bg-neutral-900 p-3">
@@ -358,18 +428,38 @@ export function SessionReview({
           <button
             disabled={exportingKind !== null}
             onClick={() =>
-              runExport("chapters", async () => {
-                const text = generateYoutubeChapters({ markers: exportMarkers });
-                if (!text) {
-                  setError("No segment-type markers in this session — nothing to export.");
-                  return;
-                }
-                await downloadOrShare(`${baseFilename}-chapters.txt`, text, "text/plain");
+              runExport("sectionsheet", async () => {
+                const csv = generateSectionSheet({ markers: exportMarkers });
+                await downloadOrShare(`${baseFilename}-section-sheet.csv`, csv, "text/csv");
               })
             }
             className="rounded-lg border border-neutral-700 px-4 py-3 text-sm text-neutral-200 hover:border-neutral-500 disabled:opacity-50"
           >
-            {exportingKind === "chapters" ? "Exporting..." : "Export YouTube Chapters"}
+            {exportingKind === "sectionsheet" ? "Exporting..." : "Export Section Sheet"}
+          </button>
+
+          <button
+            disabled={exportingKind !== null}
+            onClick={() =>
+              runExport("timecodes", async () => {
+                const md = generateTimecodesMarkdown({
+                  sessionTitle: session.title,
+                  showName: show.name,
+                  startedAt: session.started_at,
+                  endedAt: session.ended_at,
+                  lastMarkerTappedAt,
+                  markers: exportMarkers,
+                });
+                await downloadOrShare(
+                  `${sanitizeFilename(session.title)}-timecodes.md`,
+                  md,
+                  "text/markdown"
+                );
+              })
+            }
+            className="rounded-lg border border-neutral-700 px-4 py-3 text-sm text-neutral-200 hover:border-neutral-500 disabled:opacity-50"
+          >
+            {exportingKind === "timecodes" ? "Exporting..." : "Export Timecodes"}
           </button>
 
           <button

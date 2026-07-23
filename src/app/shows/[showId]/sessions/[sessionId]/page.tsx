@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { SessionReview } from "./session-review";
+import { PendingSessionReview } from "./session-review-pending";
 
 export default async function SessionReviewPage({
   params,
@@ -28,22 +28,14 @@ export default async function SessionReviewPage({
     .maybeSingle();
 
   // A session that was just ended may not have finished its background
-  // sync yet — that's a transient state, not a 404.
+  // sync yet — that's a transient state, not a 404. Fall back to the
+  // localStorage copy the live session screen wrote so the review page
+  // never gets stuck on "loading" while on flaky wifi.
   if (!session) {
     return (
       <main className="flex min-h-screen flex-col">
-        <PageHeader title={show.name} backHref={`/shows/${show.id}/sessions`} />
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-          <p className="text-sm text-neutral-400">
-            This session hasn&apos;t synced yet. Check your connection and try again.
-          </p>
-          <Link
-            href={`/shows/${showId}/sessions/${sessionId}`}
-            className="rounded-lg border border-neutral-700 px-4 py-3 text-sm text-neutral-300 hover:border-neutral-500"
-          >
-            Refresh
-          </Link>
-        </div>
+        <PageHeader title={show.name} backHref={`/shows/${show.id}`} />
+        <PendingSessionReview show={show} sessionId={sessionId} />
       </main>
     );
   }
@@ -57,7 +49,7 @@ export default async function SessionReviewPage({
 
   return (
     <main className="flex min-h-screen flex-col">
-      <PageHeader title={show.name} backHref={`/shows/${show.id}/sessions`} />
+      <PageHeader title={show.name} backHref={`/shows/${show.id}`} />
       <SessionReview show={show} session={session} markers={markers ?? []} />
     </main>
   );
